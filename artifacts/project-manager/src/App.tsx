@@ -1,11 +1,13 @@
 import { Switch, Route, Router as WouterRouter, Redirect, Link } from "wouter";
-import { ClerkProvider, SignIn, SignUp, Show } from "@clerk/react";
+import { ClerkProvider, SignIn, SignUp, Show, useAuth } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { shadcn } from "@clerk/themes";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { setAuthTokenGetter } from "@workspace/api-client-react";
+import { useEffect } from "react";
 
 // Pages
 import Dashboard from "@/pages/Dashboard";
@@ -153,6 +155,15 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   );
 }
 
+function ClerkTokenSetter() {
+  const { getToken } = useAuth();
+  useEffect(() => {
+    setAuthTokenGetter(() => getToken());
+    return () => setAuthTokenGetter(null);
+  }, [getToken]);
+  return null;
+}
+
 function ClerkProviderWithRoutes() {
   return (
     <ClerkProvider
@@ -162,6 +173,7 @@ function ClerkProviderWithRoutes() {
       signInUrl={`${basePath}/sign-in`}
       signUpUrl={`${basePath}/sign-up`}
     >
+      <ClerkTokenSetter />
       <QueryClientProvider client={queryClient}>
         <Switch>
           <Route path="/" component={HomeRedirect} />
