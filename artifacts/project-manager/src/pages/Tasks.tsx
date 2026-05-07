@@ -2,7 +2,7 @@ import { useGetMyTasks, getGetMyTasksQueryKey, useUpdateTask } from "@workspace/
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Clock, Calendar as CalendarIcon, CheckCircle2, Circle } from "lucide-react";
+import { Clock, Calendar as CalendarIcon, CheckCircle2, Circle, CheckSquare } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "wouter";
 import { useState } from "react";

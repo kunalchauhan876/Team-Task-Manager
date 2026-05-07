@@ -1,11 +1,26 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { getAuth } from "@clerk/express";
+import { getAuth, clerkClient } from "@clerk/express";
 import { db, usersTable } from "@workspace/db";
 import { UpdateMeBody } from "@workspace/api-zod";
-import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+async function fetchClerkUserInfo(clerkId: string): Promise<{ email: string; name: string }> {
+  try {
+    const client = clerkClient();
+    const clerkUser = await client.users.getUser(clerkId);
+    const email = clerkUser.emailAddresses?.[0]?.emailAddress ?? "";
+    const name =
+      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ").trim() ||
+      clerkUser.username ||
+      email.split("@")[0] ||
+      "User";
+    return { email, name };
+  } catch {
+    return { email: "", name: "User" };
+  }
+}
 
 async function getOrCreateUser(clerkId: string, email: string, name: string) {
   const existing = await db
@@ -16,9 +31,26 @@ async function getOrCreateUser(clerkId: string, email: string, name: string) {
 
   if (existing.length > 0) return existing[0];
 
+  // If email is missing (session claims don't include it), fetch from Clerk API
+  let resolvedEmail = email;
+  let resolvedName = name;
+  if (!email) {
+    const info = await fetchClerkUserInfo(clerkId);
+    resolvedEmail = info.email;
+    resolvedName = info.name || name;
+  }
+
+  if (!resolvedEmail) {
+    throw new Error("Cannot create user: email address is required");
+  }
+
   const [user] = await db
     .insert(usersTable)
-    .values({ clerkId, email, name: name || email.split("@")[0] })
+    .values({
+      clerkId,
+      email: resolvedEmail,
+      name: resolvedName || resolvedEmail.split("@")[0],
+    })
     .returning();
 
   return user;
@@ -28,7 +60,7 @@ export { getOrCreateUser };
 
 function requireAuth(req: any, res: any, next: any) {
   const auth = getAuth(req);
-  const userId = auth?.sessionClaims?.userId || auth?.userId;
+  const userId = auth?.userId;
   if (!userId) {
     res.status(401).json({ error: "Unauthorized" });
     return;
@@ -41,8 +73,9 @@ export { requireAuth };
 
 router.get("/users/me", requireAuth, async (req: any, res): Promise<void> => {
   const auth = getAuth(req);
-  const email = (auth as any)?.sessionClaims?.email || "";
-  const fullName = (auth as any)?.sessionClaims?.fullName || (auth as any)?.sessionClaims?.username || email.split("@")[0];
+  const claims = (auth as any)?.sessionClaims ?? {};
+  const email = claims.email ?? "";
+  const fullName = claims.fullName ?? claims.username ?? "";
 
   const user = await getOrCreateUser(req.clerkId, email, fullName);
   res.json({
@@ -57,8 +90,9 @@ router.get("/users/me", requireAuth, async (req: any, res): Promise<void> => {
 
 router.put("/users/me", requireAuth, async (req: any, res): Promise<void> => {
   const auth = getAuth(req);
-  const email = (auth as any)?.sessionClaims?.email || "";
-  const fullName = (auth as any)?.sessionClaims?.fullName || email.split("@")[0];
+  const claims = (auth as any)?.sessionClaims ?? {};
+  const email = claims.email ?? "";
+  const fullName = claims.fullName ?? claims.username ?? "";
 
   const user = await getOrCreateUser(req.clerkId, email, fullName);
 
